@@ -56,22 +56,19 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-boot-timeout: 720
-          script: |
-            set -eu
-            mkdir -p smoke
-            APK="$(find .work/upstream/lemuroid-app/build/outputs/apk -name '*free*bundle*debug*.apk' | head -n 1)"
-            test -n "$APK"
-            adb install -r "$APK"
-            adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity
-            sleep 15
-            adb shell pidof com.sayvabr.pocketgba.debug
-            adb shell settings get secure navigation_mode || true
-            adb exec-out screencap -p > smoke/pocket-home.png
-            adb shell uiautomator dump /sdcard/window.xml || true
-            adb pull /sdcard/window.xml smoke/window.xml || true
+          script: >-
+            mkdir -p smoke &&
+            APK="$(find .work/upstream/lemuroid-app/build/outputs/apk -name '*free*bundle*debug*.apk' | head -n 1)" &&
+            test -n "$APK" &&
+            adb install -r "$APK" &&
+            (adb shell cmd overlay enable --user 0 com.android.internal.systemui.navbar.threebutton || true) &&
+            adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity &&
+            sleep 15 &&
+            adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb shell settings get secure navigation_mode &&
+            adb exec-out screencap -p > smoke/pocket-home.png &&
             test -s smoke/pocket-home.png
-            file smoke/pocket-home.png
-      - name: Upload real emulator screenshot and UI hierarchy
+      - name: Upload real emulator screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
