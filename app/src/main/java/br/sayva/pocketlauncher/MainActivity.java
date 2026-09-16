@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MainActivity extends Activity {
     private static final int PICK_TREE=401;
+    private static final int PICK_COVER=402;
     LibraryStore library;
     CoverLoader covers;
     int accent=PocketUi.ACCENT;
@@ -28,6 +29,7 @@ public final class MainActivity extends Activity {
     private LinearLayout column;
     private FrameLayout container;
     private SharedPreferences navigation;
+    private String pendingCoverId;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -36,6 +38,7 @@ public final class MainActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(0x100|0x200|0x400);
         library=new LibraryStore(this);covers=new CoverLoader(this);
         navigation=getSharedPreferences("pocket_navigation_v1",MODE_PRIVATE);
+        pendingCoverId=navigation.getString("pending_cover_id",null);
         String restored=navigation.getString("page","Início");
         if(restored.equals("Início")||restored.equals("Biblioteca")||restored.equals("Buscar")||restored.equals("Ajustes"))page=restored;
         accent=navigation.getInt("accent",PocketUi.ACCENT);
@@ -54,6 +57,11 @@ public final class MainActivity extends Activity {
         root.addView(column,new FrameLayout.LayoutParams(-1,-1));
         setContentView(root);root.requestApplyInsets();render();
         if(!library.roots.isEmpty()&&library.games.isEmpty())scan();
+    }
+    @Override protected void onResume(){
+        super.onResume();
+        // The integrated player commits history in another LibraryStore instance.
+        if(root!=null&&!scanning.get()) {library=new LibraryStore(this);render();}
     }
     void navigate(String next){
         if(next.equals(page))return;
@@ -78,7 +86,7 @@ public final class MainActivity extends Activity {
         brand.addView(brandName);brand.addView(hint);
         header.addView(brand,new LinearLayout.LayoutParams(0,-2,1f));
         TextView emulators=PocketUi.action(this,"▶",false);emulators.setTextSize(17);
-        emulators.setContentDescription("Emuladores padrão por console");
+        emulators.setContentDescription("Emuladores externos por console");
         emulators.setOnClickListener(v->EmulatorRouter.showProfiles(this));
         header.addView(emulators,PocketUi.lp(this,46,45,0,0,7,0));
         TextView add=PocketUi.action(this,"＋",false);add.setTextSize(22);
@@ -106,8 +114,33 @@ public final class MainActivity extends Activity {
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         try{startActivityForResult(picker,PICK_TREE);}catch(Exception e){toast("O seletor de pastas não está disponível neste aparelho.");}
     }
+    void chooseCover(LibraryStore.Game game){
+        pendingCoverId=game.id;
+        navigation.edit().putString("pending_cover_id",pendingCoverId).apply();
+        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("image/*");
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try{startActivityForResult(picker,PICK_COVER);}
+        catch(Exception e){toast("Não foi possível abrir o seletor de imagens.");}
+    }
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if(request==PICK_COVER){
+            String gameId=pendingCoverId;
+            pendingCoverId=null;navigation.edit().remove("pending_cover_id").apply();
+            if(result!=RESULT_OK||data==null||data.getData()==null||gameId==null)return;
+            try {
+                android.net.Uri art=data.getData();
+                getContentResolver().takePersistableUriPermission(art,Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                for(LibraryStore.Game game:library.snapshot())if(game.id.equals(gameId)){
+                    library.setCover(game,art.toString());
+                    covers.clearFailure(game);
+                    toast("Capa personalizada aplicada a "+game.title);render();return;
+                }
+            }catch(Exception e){toast("Não consegui abrir esta imagem: "+e.getMessage());}
+            return;
+        }
         if(request!=PICK_TREE||result!=RESULT_OK||data==null||data.getData()==null)return;
         try{
             library.addFolder(data.getData(),data.getFlags());
@@ -138,8 +171,10 @@ public final class MainActivity extends Activity {
         },"Pocket-Rom-Scan").start();
     }
     void showActions(LibraryStore.Game game){
+        boolean internal=game.system.equals("GBA")||game.system.equals("GB")||game.system.equals("GBC");
         String[] options={"Jogar","Informações","Renomear","Favoritar / desfavoritar",
-            game.hidden?"Restaurar à biblioteca":"Remover da lista","Escolher outro emulador"};
+            game.hidden?"Restaurar à biblioteca":"Remover da lista","Escolher capa","Remover capa personalizada",
+            internal?"Usar outro emulador (externo)":"Trocar emulador"};
         new AlertDialog.Builder(this).setTitle(game.title).setItems(options,(dialog,which)->{
             switch(which){
                 case 0 -> launch(game);
@@ -147,7 +182,9 @@ public final class MainActivity extends Activity {
                 case 2 -> rename(game);
                 case 3 -> {library.edit(game,null,!game.favorite,null);render();}
                 case 4 -> {library.edit(game,null,null,!game.hidden);render();}
-                case 5 -> new EmulatorRouter(this,game).chooseManual();
+                case 5 -> chooseCover(game);
+                case 6 -> {library.setCover(game,null);covers.clearFailure(game);render();}
+                case 7 -> new EmulatorRouter(this,game).chooseManual();
             }
         }).show();
     }
@@ -155,19 +192,27 @@ public final class MainActivity extends Activity {
         EditText editor=new EditText(this);editor.setSingleLine(true);editor.setText(game.title);editor.selectAll();
         new AlertDialog.Builder(this).setTitle("Renomear jogo").setView(editor)
             .setNegativeButton("Cancelar",null).setPositiveButton("Salvar",(dialog,which)->{
-                library.edit(game,editor.getText().toString(),null,null);render();
+                library.edit(game,editor.getText().toString(),null,null);covers.clearFailure(game);render();
             }).show();
     }
     void details(LibraryStore.Game game){
+        boolean internal=game.system.equals("GBA")||game.system.equals("GB")||game.system.equals("GBC");
         String info="Sistema: "+game.system+"\nArquivo: "+game.fileName+"\n\n"
-            +(game.lastPlayed==0?"Ainda não enviado ao emulador":"Último envio: "+android.text.format.DateFormat.format("dd/MM/yyyy HH:mm",game.lastPlayed))
-            +"\n\nO Pocket não exclui ROMs ou saves ao ocultar jogos.";
+            +(game.lastPlayed==0?"Ainda não iniciado":"Último acesso: "+android.text.format.DateFormat.format("dd/MM/yyyy HH:mm",game.lastPlayed))
+            +"\n\n"+(internal?"mGBA integrado: não exige outro aplicativo.":"Este console exige um emulador externo instalado.")
+            +"\n\nAs ROMs não são excluídas ao ocultar jogos.";
         new AlertDialog.Builder(this).setTitle(game.title).setMessage(info)
             .setPositiveButton("Jogar",(d,w)->launch(game))
             .setNeutralButton("Editar",(d,w)->showActions(game))
             .setNegativeButton("Fechar",null).show();
     }
-    void launch(LibraryStore.Game game){new EmulatorRouter(this,game).choose();}
+    void launch(LibraryStore.Game game){
+        if(game.system.equals("GBA")||game.system.equals("GB")||game.system.equals("GBC")){
+            Intent play=new Intent(this,EmulatorActivity.class);
+            play.putExtra(EmulatorActivity.GAME_ID,game.id);
+            startActivity(play);
+        }else new EmulatorRouter(this,game).choose();
+    }
     void removeRoot(LibraryStore.Root folder){
         new AlertDialog.Builder(this).setTitle("Desvincular pasta?")
             .setMessage("Isso interrompe novas leituras desta pasta, mas preserva os jogos já indexados, as ROMs e os saves.")
