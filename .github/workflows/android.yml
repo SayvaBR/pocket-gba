@@ -1,4 +1,4 @@
-name: Pocket clean-room Android APK
+name: Pocket Android — gameplay and UI
 on:
   push:
     branches: [rewrite/pocket-launcher-independent]
@@ -8,7 +8,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v5
@@ -18,49 +18,72 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Check preinstalled Android SDK
-        run: |
-          test -n "$ANDROID_HOME"
-          test -d "$ANDROID_HOME"
-          echo "Using runner Android SDK: $ANDROID_HOME"
-      - name: Assemble independent application
-        run: gradle --no-daemon :app:assembleDebug
-      - name: Confirm own app package and no legacy emulator code
+      - uses: android-actions/setup-android@v3
+      - name: Install exact native SDK toolchain
+        run: sdkmanager 'ndk;22.1.7171670' 'cmake;3.22.1'
+      - name: Pin and fetch source of the playable mGBA bridge
         shell: bash
         run: |
           set -euo pipefail
-          test -s app/build/outputs/apk/debug/app-debug.apk
-          ! find app/src -type f | grep -Ei 'lemuroid|libretro|mgba|core'
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
-          sha256sum app/build/outputs/apk/debug/app-debug.apk
+          git clone --depth 1 --branch v0.6.2 https://github.com/TrebuchetDynamics/garnacha-boy-android.git vendor/garnacha
+          test "$(git -C vendor/garnacha rev-parse HEAD)" = 'ca04791ec96120a4546645cdc33e7e7ecb4c7f3e'
+          git -C vendor/garnacha submodule update --init --depth 1 vendor/mgba
+          test "$(git -C vendor/garnacha/vendor/mgba rev-parse HEAD)" = '26b7884bc25a5933960f3cdcd98bac1ae14d42e2'
+          test -f vendor/garnacha/android/core/CMakeLists.txt
+          test -f vendor/garnacha/vendor/mgba/LICENSE
+      - name: Build native mGBA core and app bridge from source
+        run: gradle --no-daemon -p vendor/garnacha/android :core:assembleDebug
+      - name: Stage core and obligatory licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/libs app/src/main/assets/licenses
+          cp vendor/garnacha/android/core/build/outputs/aar/core-debug.aar app/libs/mgba-core.aar
+          cp vendor/garnacha/LICENSE app/src/main/assets/licenses/Garnacha-bridge-MIT.txt
+          cp vendor/garnacha/vendor/mgba/LICENSE app/src/main/assets/licenses/mGBA-MPL-2.0.txt
+          unzip -l app/libs/mgba-core.aar | grep 'jni/arm64-v8a/libmgba-android.so'
+          unzip -l app/libs/mgba-core.aar | grep 'jni/x86_64/libmgba-android.so'
+      - name: Assemble Pocket with bundled emulator
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Verify signed APK includes real native emulator and licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -l "$APK" | grep -E 'lib/arm64-v8a/libmgba-android.so'
+          unzip -l "$APK" | grep -E 'lib/x86_64/libmgba-android.so'
+          unzip -l "$APK" | grep -F 'assets/licenses/mGBA-MPL-2.0.txt'
+          unzip -l "$APK" | grep -F 'assets/licenses/Garnacha-bridge-MIT.txt'
+          ls -lh "$APK"
+          sha256sum "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: Pocket-independent-launcher-debug
+          name: Pocket-playable-mgba-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
           if-no-files-found: error
   smoke:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - name: Download this exact run's APK
+      - name: Fetch APK from exact build in this run
         uses: actions/download-artifact@v4
         with:
-          name: Pocket-independent-launcher-debug
+          name: Pocket-playable-mgba-debug
           path: qa/apk
-      - name: Verify APK before Android install
-        shell: bash
+      - name: Check APK before Android install
         run: |
           set -euo pipefail
           test -s qa/apk/app-debug.apk
-          file qa/apk/app-debug.apk
+          unzip -l qa/apk/app-debug.apk | grep -F 'lib/x86_64/libmgba-android.so'
           sha256sum qa/apk/app-debug.apk
-      - name: Enable emulator acceleration
+      - name: Enable Android emulator acceleration
         run: |
           if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
-      - name: Android 35 installation, Home, navigation and insets
+      - name: Android 35 — install, navigate, check built-in core
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -70,11 +93,10 @@ jobs:
           emulator-boot-timeout: 720
           disable-animations: true
           script: bash scripts/android-smoke.sh
-      - name: Preserve UI and logs for failed or successful smoke
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Pocket-independent-android-qa
+          name: Pocket-android-qa
           path: qa/captures/
           retention-days: 14
           if-no-files-found: warn
