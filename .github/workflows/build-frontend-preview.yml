@@ -43,7 +43,7 @@ jobs:
           git -C .work/upstream/lemuroid-cores sparse-checkout set bundled-cores lemuroid_core_mgba lemuroid_core_gambatte lemuroid_core_snes9x lemuroid_core_melonds
           git -C .work/upstream/lemuroid-cores fetch --depth 1 origin fee2e824525daa22bcf318f96127fe43fa8a15ad
           git -C .work/upstream/lemuroid-cores checkout --detach FETCH_HEAD
-      - name: Apply Pocket-owned launcher and persistent multi-folder index
+      - name: Apply new portrait frontend and reliable multi-folder library
         shell: bash
         run: |
           set -euo pipefail
@@ -55,10 +55,11 @@ jobs:
           python3 scripts/apply_multisystem_frontend.py "$GITHUB_WORKSPACE/.work/upstream"
           python3 scripts/apply_frontend_visual.py "$GITHUB_WORKSPACE/.work/upstream"
           python3 scripts/apply_multi_folder_library.py "$GITHUB_WORKSPACE/.work/upstream"
-          # Replace the round icon token after the prefix match in the original script.
           sed -i 's#@mipmap/lemuroid_launcher_round#@drawable/pocket_launcher_mark_round#' scripts/apply_original_launcher.py
           python3 scripts/apply_original_launcher.py "$GITHUB_WORKSPACE/.work/upstream"
-      - name: Assert all consoles, unique launcher and safe multi-folder persistence
+          python3 scripts/apply_scan_reliability.py "$GITHUB_WORKSPACE/.work/upstream"
+          python3 scripts/apply_portrait_entry.py "$GITHUB_WORKSPACE/.work/upstream"
+      - name: Assert independent UI, safe scanning and four emulation cores
         shell: bash
         run: |
           set -euo pipefail
@@ -66,19 +67,21 @@ jobs:
             test -f ".work/upstream/lemuroid-cores/bundled-cores/src/main/jniLibs/arm64-v8a/lib${core}_libretro_android.so"
           done
           grep -Fq 'SystemID.SNES, SystemID.NDS' .work/upstream/retrograde-app-shared/src/main/java/com/swordfish/lemuroid/lib/library/GameSystem.kt
-          grep -Fq 'PocketPlatformShelf("Sistemas", null, onConsole)' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
-          ! grep -Fq 'PocketBottomBar(' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
+          grep -Fq 'PocketPortraitLauncher(' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/MainActivity.kt
+          ! grep -Fq '            PocketShell(' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/MainActivity.kt
+          grep -Fq 'android:screenOrientation="portrait"' .work/upstream/lemuroid-app/src/main/AndroidManifest.xml
           grep -Fq 'pocket_library_roots_v1' .work/upstream/retrograde-app-shared/src/main/java/com/swordfish/lemuroid/lib/storage/local/StorageAccessFrameworkProvider.kt
-          grep -Fq 'if (scanCompleted) cleanUp(startedAtMs)' .work/upstream/retrograde-app-shared/src/main/java/com/swordfish/lemuroid/lib/library/LemuroidLibrary.kt
+          grep -Fq 'pocketRecognizeByExtension' .work/upstream/retrograde-app-shared/src/main/java/com/swordfish/lemuroid/lib/library/LemuroidLibrary.kt
+          grep -Fq 'if (!scanCompleted) Timber.w' .work/upstream/retrograde-app-shared/src/main/java/com/swordfish/lemuroid/lib/library/LemuroidLibrary.kt
+          test -s .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketPortraitLauncher.kt
           test -s .work/upstream/lemuroid-app/src/main/res/drawable/pocket_launcher_mark.xml
-          ! grep -Fq 'coverPicker.launch(' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
-      - name: Compile Pocket launcher APK
+      - name: Compile Pocket portrait APK
         working-directory: .work/upstream
         shell: bash
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon :lemuroid-app:assembleFreeBundleDebug
-      - name: Verify APK really carries four native cores
+      - name: Verify four emulator engines in built APK
         shell: bash
         run: |
           set -euo pipefail
@@ -87,12 +90,12 @@ jobs:
           for core in mgba gambatte snes9x melonds; do
             unzip -Z1 "$apk" | grep -Fq "lib/arm64-v8a/lib${core}_libretro_android.so"
           done
-          cp "$apk" Pocket-launcher-preview.apk
-          ls -lh Pocket-launcher-preview.apk
-          sha256sum Pocket-launcher-preview.apk
+          cp "$apk" Pocket-portrait-preview.apk
+          ls -lh Pocket-portrait-preview.apk
+          sha256sum Pocket-portrait-preview.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Pocket-launcher-preview-apk
-          path: Pocket-launcher-preview.apk
+          name: Pocket-portrait-preview-apk
+          path: Pocket-portrait-preview.apk
           if-no-files-found: error
           retention-days: 14
