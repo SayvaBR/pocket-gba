@@ -1,0 +1,88 @@
+name: Pocket Portrait Android Smoke
+
+on:
+  push:
+    branches: [feat/pocket-multisystem-frontend]
+    paths: ['.github/workflows/pocket-portrait-smoke.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  portrait-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Download exact passing portrait build
+        uses: actions/download-artifact@v4
+        with:
+          name: Pocket-portrait-preview-apk
+          repository: SayvaBR/pocket-gba
+          run-id: 35100583506
+          github-token: ${{ github.token }}
+          path: smoke/apk
+      - name: Verify APK and four built-in cores
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=smoke/apk/Pocket-portrait-preview.apk
+          test -s "$apk"
+          for core in mgba gambatte snes9x melonds; do
+            unzip -Z1 "$apk" | grep -F "lib/x86_64/lib${core}_libretro_android.so"
+          done
+          sha256sum "$apk"
+      - name: Enable KVM
+        run: if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
+      - name: Android 35 boot, open portrait UI, navigate and capture evidence
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 720
+          script: >-
+            mkdir -p smoke/captures &&
+            (adb shell cmd overlay enable --user 0 com.android.internal.systemui.navbar.threebutton || true) &&
+            adb install -r smoke/apk/Pocket-portrait-preview.apk &&
+            adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity &&
+            sleep 28 &&
+            adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb shell dumpsys activity activities > smoke/captures/activity.txt &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/home.xml &&
+            grep -Fq 'Sua coleção' smoke/captures/home.xml &&
+            grep -Fq 'Game Boy Advance' smoke/captures/home.xml &&
+            ! grep -Eiq "isn.t responding|Close app|not responding" smoke/captures/home.xml &&
+            adb exec-out screencap -p > smoke/captures/01-home.png &&
+            adb shell input tap 310 335 &&
+            sleep 4 &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/library.xml &&
+            grep -Fq 'Biblioteca' smoke/captures/library.xml &&
+            adb exec-out screencap -p > smoke/captures/02-library.png &&
+            adb shell input tap 997 158 &&
+            sleep 4 &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/settings.xml &&
+            grep -Fq 'Pastas de jogos' smoke/captures/settings.xml &&
+            adb exec-out screencap -p > smoke/captures/03-settings.png &&
+            adb shell input keyevent 4 &&
+            sleep 3 &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/back.xml &&
+            grep -Fq 'Biblioteca' smoke/captures/back.xml &&
+            adb exec-out screencap -p > smoke/captures/04-back.png &&
+            test -s smoke/captures/01-home.png &&
+            test -s smoke/captures/04-back.png
+      - name: Preserve evidence even if the test fails
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pocket-portrait-android-evidence
+          path: smoke/captures/
+          if-no-files-found: warn
+          retention-days: 14
