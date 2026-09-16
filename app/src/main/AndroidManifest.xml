@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <queries>
+        <package android:name="me.magnum.melonds"/>
+        <package android:name="me.magnum.melonds.nightly"/>
+        <package android:name="com.dsemu.drastic"/>
+        <package android:name="com.explusalpha.Snes9xPlus"/>
+        <package android:name="com.explusalpha.GbaEmu"/>
+        <package android:name="com.explusalpha.GbcEmu"/>
+        <package android:name="it.dbtecno.pizzaboygba"/>
+        <package android:name="it.dbtecno.pizzaboygbapro"/>
+        <package android:name="it.dbtecno.pizzaboy"/>
+        <package android:name="it.dbtecno.pizzaboypro"/>
+        <package android:name="com.sky.SkyEmu"/>
+        <intent><action android:name="android.intent.action.VIEW"/><data android:mimeType="application/octet-stream"/></intent>
+    </queries>
     <application android:label="Pocket" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false" android:allowBackup="false">
         <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="portrait">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
