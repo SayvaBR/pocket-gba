@@ -39,3 +39,42 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
           if-no-files-found: error
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download this exact run's APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Pocket-independent-launcher-debug
+          path: qa/apk
+      - name: Verify APK before Android install
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s qa/apk/app-debug.apk
+          file qa/apk/app-debug.apk
+          sha256sum qa/apk/app-debug.apk
+      - name: Enable emulator acceleration
+        run: |
+          if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
+      - name: Android 35 installation, Home, navigation and insets
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 720
+          disable-animations: true
+          script: bash scripts/android-smoke.sh
+      - name: Preserve UI and logs for failed or successful smoke
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Pocket-independent-android-qa
+          path: qa/captures/
+          retention-days: 14
+          if-no-files-found: warn
