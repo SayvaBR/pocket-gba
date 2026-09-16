@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsSL https://releases.rive.app/cli/install.sh -o "$RUNNER_TEMP/rive-install.sh"
-          sh "$RUNNER_TEMP/rive-install.sh"
+          bash "$RUNNER_TEMP/rive-install.sh"
           echo "$HOME/.rive/bin" >> "$GITHUB_PATH"
       - name: Compile and render the CLI sample as integration smoke test
         shell: bash
