@@ -2,13 +2,22 @@ plugins { id 'com.android.application' }
 android {
     namespace 'br.sayva.pocketlauncher'
     compileSdk 35
-    defaultConfig { applicationId 'br.sayva.pocketlauncher'; minSdk 26; targetSdk 35; versionCode 2; versionName '0.2.0-gba' }
+    defaultConfig {
+        applicationId 'br.sayva.pocketlauncher'
+        minSdk 26
+        targetSdk 35
+        versionCode 2
+        versionName '0.2.0-gba'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     packaging { jniLibs { useLegacyPackaging = true } }
 }
 
-// AAR is built from pinned upstream *source* by .github/workflows/android.yml.
-// Fail compilation if the native core is absent; never ship a fake "play" screen.
+// The pinned MIT bridge + MPL mGBA AAR is built from source in CI.
+// It is deliberately mandatory: a launcher-only APK must not be advertised as playable.
 dependencies {
     implementation files('libs/mgba-core.aar')
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
 }
