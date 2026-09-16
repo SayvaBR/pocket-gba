@@ -48,24 +48,44 @@ jobs:
           cp vendor/garnacha/vendor/mgba/LICENSE app/src/main/assets/licenses/mGBA-MPL-2.0.txt
           unzip -l app/libs/mgba-core.aar | grep 'jni/arm64-v8a/libmgba-android.so'
           unzip -l app/libs/mgba-core.aar | grep 'jni/x86_64/libmgba-android.so'
-      - name: Assemble Pocket with bundled emulator
-        run: gradle --no-daemon :app:assembleDebug
-      - name: Verify signed APK includes real native emulator and licenses
+      - name: Download pinned, MIT-licensed ROM exclusively into instrumented test APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/androidTest/assets
+          curl --fail --location --silent --show-error --retry 3 \
+            'https://raw.githubusercontent.com/mechanize-work/gba-eval/92b585e5a0f6c7533bf69b9a4348b517a1b735e0/corpus/roms/test/mgba-suite.gba' \
+            --output app/src/androidTest/assets/core-smoke.gba
+          test "$(git hash-object app/src/androidTest/assets/core-smoke.gba)" = 'b1be855863c0eeade14491a129a4749fd443fa61'
+          test ! -f app/src/main/assets/core-smoke.gba
+          echo 'ROM provenance: mgba-emu/suite MIT via mechanize-work/gba-eval at pinned commit; test APK only.'
+      - name: Assemble game and instrumented gameplay test
+        run: gradle --no-daemon :app:assembleDebug :app:assembleAndroidTest
+      - name: Verify actual emulator in user APK and independent test fixture
         shell: bash
         run: |
           set -euo pipefail
           APK=app/build/outputs/apk/debug/app-debug.apk
           test -s "$APK"
-          unzip -l "$APK" | grep -E 'lib/arm64-v8a/libmgba-android.so'
-          unzip -l "$APK" | grep -E 'lib/x86_64/libmgba-android.so'
+          unzip -l "$APK" | grep -F 'lib/arm64-v8a/libmgba-android.so'
+          unzip -l "$APK" | grep -F 'lib/x86_64/libmgba-android.so'
           unzip -l "$APK" | grep -F 'assets/licenses/mGBA-MPL-2.0.txt'
           unzip -l "$APK" | grep -F 'assets/licenses/Garnacha-bridge-MIT.txt'
-          ls -lh "$APK"
-          sha256sum "$APK"
+          if unzip -Z1 "$APK" | grep -F 'core-smoke.gba'; then echo 'Test ROM leaked into app' >&2; exit 1; fi
+          TEST_APK=$(find app/build/outputs/apk/androidTest -name '*.apk' -print -quit)
+          test -n "$TEST_APK" && test -s "$TEST_APK"
+          unzip -l "$TEST_APK" | grep -F 'assets/core-smoke.gba'
+          sha256sum "$APK" "$TEST_APK"
       - uses: actions/upload-artifact@v4
         with:
           name: Pocket-playable-mgba-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pocket-instrumentation-test
+          path: app/build/outputs/apk/androidTest/**/*.apk
           retention-days: 14
           if-no-files-found: error
   smoke:
@@ -74,21 +94,26 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch APK from exact build in this run
+      - name: Fetch this run's real APK
         uses: actions/download-artifact@v4
         with:
           name: Pocket-playable-mgba-debug
           path: qa/apk
-      - name: Check APK before Android install
+      - name: Fetch this run's isolated test APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Pocket-instrumentation-test
+          path: qa/test
+      - name: Check Android APKs before install
         run: |
           set -euo pipefail
           test -s qa/apk/app-debug.apk
           unzip -l qa/apk/app-debug.apk | grep -F 'lib/x86_64/libmgba-android.so'
-          sha256sum qa/apk/app-debug.apk
+          find qa/test -name '*.apk' -size +0c -print -quit | grep .
       - name: Enable Android emulator acceleration
         run: |
           if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
-      - name: Android 35 — install, navigate, check built-in core
+      - name: Android 35 — Home, native ROM gameplay, frame output and autosave
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -97,7 +122,7 @@ jobs:
           profile: pixel_6
           emulator-boot-timeout: 720
           disable-animations: true
-          script: bash scripts/android-smoke.sh
+          script: bash scripts/android-smoke.sh && bash scripts/gameplay-smoke.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
