@@ -15,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Download exact passing preview APK from workflow run 35074124036
+      - name: Download exact console-first preview APK from passing workflow run 35076149636
         uses: actions/download-artifact@v4
         with:
           name: Pocket-frontend-preview-apk
           repository: SayvaBR/pocket-gba
-          run-id: 35074124036
+          run-id: 35076149636
           github-token: ${{ github.token }}
           path: smoke/apk
       - name: Verify exact preview artifact
@@ -36,7 +36,7 @@ jobs:
       - name: Enable KVM if available
         run: |
           if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
-      - name: Android 35 actual UI assertions and screenshots, no false positives
+      - name: Android 35 assertions for own console-first UI, Back, resume and insets
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -55,6 +55,8 @@ jobs:
             adb shell uiautomator dump /sdcard/window.xml &&
             adb shell cat /sdcard/window.xml > smoke/captures/home.xml &&
             grep -Fq 'Sua biblioteca começa aqui' smoke/captures/home.xml &&
+            grep -Fq 'Consoles' smoke/captures/home.xml &&
+            grep -Fq 'Game Boy Advance' smoke/captures/home.xml &&
             ! grep -Eiq "isn.t responding|Close app|not responding" smoke/captures/home.xml &&
             adb exec-out screencap -p > smoke/captures/01-home.png &&
             adb shell input tap 410 2150 &&
@@ -62,6 +64,7 @@ jobs:
             adb shell uiautomator dump /sdcard/window.xml &&
             adb shell cat /sdcard/window.xml > smoke/captures/library.xml &&
             grep -Fq 'Nenhum jogo ainda' smoke/captures/library.xml &&
+            grep -Fq 'Consoles' smoke/captures/library.xml &&
             ! grep -Eiq "isn.t responding|Close app|not responding" smoke/captures/library.xml &&
             adb exec-out screencap -p > smoke/captures/02-library.png &&
             adb shell input tap 950 2150 &&
@@ -91,7 +94,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: pocket-multisystem-android-smoke-asserted
+          name: pocket-console-first-android-smoke
           path: smoke/captures/
           if-no-files-found: warn
           retention-days: 14
