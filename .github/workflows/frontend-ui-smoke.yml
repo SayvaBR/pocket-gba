@@ -1,0 +1,83 @@
+name: Pocket Multisystem Android Smoke
+
+on:
+  push:
+    branches: [feat/pocket-multisystem-frontend]
+    paths: ['.github/workflows/frontend-ui-smoke.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  emulator-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download exact passing preview APK from workflow run 35074124036
+        uses: actions/download-artifact@v4
+        with:
+          name: Pocket-frontend-preview-apk
+          repository: SayvaBR/pocket-gba
+          run-id: 35074124036
+          github-token: ${{ github.token }}
+          path: smoke/apk
+      - name: Verify exact preview artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s smoke/apk/Pocket-frontend-preview.apk
+          file smoke/apk/Pocket-frontend-preview.apk
+          for core in mgba gambatte snes9x melonds; do
+            unzip -Z1 smoke/apk/Pocket-frontend-preview.apk | grep -F "lib/x86_64/lib${core}_libretro_android.so"
+          done
+          sha256sum smoke/apk/Pocket-frontend-preview.apk
+      - name: Enable KVM if available
+        run: |
+          if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
+      - name: Android 35 install, launch and screenshot navigation with system buttons
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 720
+          script: >-
+            mkdir -p smoke/captures &&
+            (adb shell cmd overlay enable --user 0 com.android.internal.systemui.navbar.threebutton || true) &&
+            adb install -r smoke/apk/Pocket-frontend-preview.apk &&
+            adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity &&
+            sleep 18 &&
+            adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb exec-out screencap -p > smoke/captures/01-home.png &&
+            adb shell input tap 410 2150 &&
+            sleep 3 &&
+            adb exec-out screencap -p > smoke/captures/02-library-all.png &&
+            adb shell input tap 225 310 &&
+            sleep 2 &&
+            adb exec-out screencap -p > smoke/captures/03-library-filter.png &&
+            adb shell input tap 950 2150 &&
+            sleep 2 &&
+            adb exec-out screencap -p > smoke/captures/04-settings.png &&
+            adb shell input keyevent 4 &&
+            sleep 2 &&
+            adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb exec-out screencap -p > smoke/captures/05-back-library.png &&
+            adb shell input keyevent 3 &&
+            adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity &&
+            sleep 3 &&
+            adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb exec-out screencap -p > smoke/captures/06-resume-library.png &&
+            test -s smoke/captures/01-home.png &&
+            test -s smoke/captures/06-resume-library.png
+      - name: Preserve actual Android screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pocket-multisystem-android-smoke
+          path: smoke/captures/
+          if-no-files-found: warn
+          retention-days: 14
