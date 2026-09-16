@@ -57,7 +57,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 720
           script: |
-            set -euxo pipefail
+            set -eu
             mkdir -p smoke
             APK="$(find .work/upstream/lemuroid-app/build/outputs/apk -name '*free*bundle*debug*.apk' | head -n 1)"
             test -n "$APK"
