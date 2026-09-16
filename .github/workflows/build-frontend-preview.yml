@@ -1,0 +1,87 @@
+name: Build Pocket Frontend Preview
+
+on:
+  push:
+    branches: [feat/pocket-multisystem-frontend]
+    paths:
+      - '.github/workflows/build-frontend-preview.yml'
+      - 'scripts/**'
+      - 'overrides/**'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pocket-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Fetch exact pinned backend and only four native cores
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .work/upstream
+          git -C .work/upstream init
+          git -C .work/upstream remote add origin https://github.com/Swordfish90/Lemuroid.git
+          git -C .work/upstream fetch --depth 1 origin 53752bf29bc3f95c50f6c38f70cd4a53450a7098
+          git -C .work/upstream checkout --detach FETCH_HEAD
+          mkdir -p .work/upstream/lemuroid-cores
+          git -C .work/upstream/lemuroid-cores init
+          git -C .work/upstream/lemuroid-cores remote add origin https://github.com/Swordfish90/LemuroidCores.git
+          git -C .work/upstream/lemuroid-cores sparse-checkout init --cone
+          git -C .work/upstream/lemuroid-cores sparse-checkout set bundled-cores lemuroid_core_mgba lemuroid_core_gambatte lemuroid_core_snes9x lemuroid_core_melonds
+          git -C .work/upstream/lemuroid-cores fetch --depth 1 origin fee2e824525daa22bcf318f96127fe43fa8a15ad
+          git -C .work/upstream/lemuroid-cores checkout --detach FETCH_HEAD
+      - name: Apply existing tested app then enable four-console preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/prepare_upstream.sh "$GITHUB_WORKSPACE/.work/upstream"
+          python3 scripts/apply_shell_v2.py "$GITHUB_WORKSPACE/.work/upstream"
+          python3 scripts/apply_game_menu.py "$GITHUB_WORKSPACE/.work/upstream"
+          python3 scripts/apply_library_personalization.py "$GITHUB_WORKSPACE/.work/upstream"
+          sed -i '/^import androidx.compose.material3.Button$/i import androidx.compose.material3.AlertDialog' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
+          python3 scripts/apply_multisystem_frontend.py "$GITHUB_WORKSPACE/.work/upstream"
+      - name: Assert four cores and platform filters are really present
+        shell: bash
+        run: |
+          set -euo pipefail
+          for core in mgba gambatte snes9x melonds; do
+            test -f ".work/upstream/lemuroid-cores/bundled-cores/src/main/jniLibs/arm64-v8a/lib${core}_libretro_android.so"
+          done
+          grep -Fq 'SystemID.SNES, SystemID.NDS' .work/upstream/retrograde-app-shared/src/main/java/com/swordfish/lemuroid/lib/library/GameSystem.kt
+          ! grep -Fq 'coverPicker.launch(' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
+      - name: Compile preview APK
+        working-directory: .work/upstream
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :lemuroid-app:assembleFreeBundleDebug
+      - name: Verify compiled APK native cores
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find .work/upstream/lemuroid-app/build/outputs/apk -name '*free*bundle*debug*.apk' | head -n 1)"
+          test -n "$apk"
+          for core in mgba gambatte snes9x melonds; do
+            unzip -Z1 "$apk" | grep -Fq "lib/arm64-v8a/lib${core}_libretro_android.so"
+          done
+          cp "$apk" Pocket-frontend-preview.apk
+          ls -lh Pocket-frontend-preview.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pocket-frontend-preview-apk
+          path: Pocket-frontend-preview.apk
+          if-no-files-found: error
+          retention-days: 14
