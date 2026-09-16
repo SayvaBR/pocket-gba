@@ -43,7 +43,7 @@ jobs:
           git -C .work/upstream/lemuroid-cores sparse-checkout set bundled-cores lemuroid_core_mgba lemuroid_core_gambatte lemuroid_core_snes9x lemuroid_core_melonds
           git -C .work/upstream/lemuroid-cores fetch --depth 1 origin fee2e824525daa22bcf318f96127fe43fa8a15ad
           git -C .work/upstream/lemuroid-cores checkout --detach FETCH_HEAD
-      - name: Apply existing tested app then enable four-console preview
+      - name: Apply Pocket frontend and console-first design
         shell: bash
         run: |
           set -euo pipefail
@@ -53,7 +53,8 @@ jobs:
           python3 scripts/apply_library_personalization.py "$GITHUB_WORKSPACE/.work/upstream"
           sed -i '/^import androidx.compose.material3.Button$/i import androidx.compose.material3.AlertDialog' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
           python3 scripts/apply_multisystem_frontend.py "$GITHUB_WORKSPACE/.work/upstream"
-      - name: Assert four cores and platform filters are really present
+          python3 scripts/apply_frontend_visual.py "$GITHUB_WORKSPACE/.work/upstream"
+      - name: Assert four cores, platform filters and original UI
         shell: bash
         run: |
           set -euo pipefail
@@ -61,6 +62,7 @@ jobs:
             test -f ".work/upstream/lemuroid-cores/bundled-cores/src/main/jniLibs/arm64-v8a/lib${core}_libretro_android.so"
           done
           grep -Fq 'SystemID.SNES, SystemID.NDS' .work/upstream/retrograde-app-shared/src/main/java/com/swordfish/lemuroid/lib/library/GameSystem.kt
+          grep -Fq 'PocketPlatformShelf("Consoles", null, onConsole)' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
           ! grep -Fq 'coverPicker.launch(' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
       - name: Compile preview APK
         working-directory: .work/upstream
