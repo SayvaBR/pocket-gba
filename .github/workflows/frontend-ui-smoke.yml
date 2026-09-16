@@ -1,0 +1,99 @@
+name: Pocket Launcher Android UI Smoke
+
+on:
+  push:
+    branches: [feat/pocket-multisystem-frontend]
+    paths: ['.github/workflows/frontend-ui-smoke.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  emulator-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Download EXACT new Pocket launcher APK from build 35079736609
+        uses: actions/download-artifact@v4
+        with:
+          name: Pocket-launcher-preview-apk
+          repository: SayvaBR/pocket-gba
+          run-id: 35079736609
+          github-token: ${{ github.token }}
+          path: smoke/apk
+      - name: Verify exact APK and all four cores
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=smoke/apk/Pocket-launcher-preview.apk
+          test -s "$apk"
+          file "$apk"
+          for core in mgba gambatte snes9x melonds; do
+            unzip -Z1 "$apk" | grep -F "lib/x86_64/lib${core}_libretro_android.so"
+          done
+          sha256sum "$apk"
+      - name: Enable KVM if available
+        run: |
+          if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
+      - name: Android 35 boot, original launcher UI, Back and resume assertions
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 720
+          script: >-
+            mkdir -p smoke/captures &&
+            (adb shell cmd overlay enable --user 0 com.android.internal.systemui.navbar.threebutton || true) &&
+            adb install -r smoke/apk/Pocket-launcher-preview.apk &&
+            adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity &&
+            sleep 25 &&
+            adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/home.xml &&
+            grep -Fq 'Escolha seu universo' smoke/captures/home.xml &&
+            grep -Fq 'Game Boy Advance' smoke/captures/home.xml &&
+            ! grep -Eiq "isn.t responding|Close app|not responding" smoke/captures/home.xml &&
+            adb exec-out screencap -p > smoke/captures/01-home.png &&
+            adb shell input tap 420 330 &&
+            sleep 4 &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/library.xml &&
+            grep -Fq 'Nenhum jogo ainda' smoke/captures/library.xml &&
+            ! grep -Eiq "isn.t responding|Close app|not responding" smoke/captures/library.xml &&
+            adb exec-out screencap -p > smoke/captures/02-library.png &&
+            adb shell input tap 950 330 &&
+            sleep 3 &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/settings.xml &&
+            grep -Fq 'Aparência' smoke/captures/settings.xml &&
+            adb exec-out screencap -p > smoke/captures/03-settings.png &&
+            adb shell input keyevent 4 &&
+            sleep 3 &&
+            adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/back.xml &&
+            grep -Fq 'Nenhum jogo ainda' smoke/captures/back.xml &&
+            adb exec-out screencap -p > smoke/captures/04-back-library.png &&
+            adb shell input keyevent 3 &&
+            adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity &&
+            sleep 5 &&
+            adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/resume.xml &&
+            grep -Fq 'Nenhum jogo ainda' smoke/captures/resume.xml &&
+            adb exec-out screencap -p > smoke/captures/05-resume-library.png &&
+            test -s smoke/captures/01-home.png &&
+            test -s smoke/captures/05-resume-library.png
+      - name: Preserve real Android evidence including failures
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pocket-launcher-original-ui-android-evidence
+          path: smoke/captures/
+          if-no-files-found: warn
+          retention-days: 14
