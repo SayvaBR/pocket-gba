@@ -1,10 +1,17 @@
 package com.swordfish.lemuroid.app.mobile.shared.compose.ui
 
+import android.content.SharedPreferences
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
-import com.swordfish.lemuroid.app.utils.android.settings.indexPreferenceState
+import androidx.compose.ui.platform.LocalContext
+import com.swordfish.lemuroid.lib.preferences.SharedPreferencesHelper
 
 private val AccentValues = listOf("blue", "purple", "cyan", "green", "orange", "pink")
 
@@ -23,12 +30,24 @@ fun AppTheme(
     darkTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val accentIndex =
-        indexPreferenceState(
-            key = "pocket_theme_accent",
-            default = "blue",
-            values = AccentValues,
-        ).value
+    val context = LocalContext.current
+    val preferences = remember(context) { SharedPreferencesHelper.getSharedPreferences(context) }
+    var accentName by remember(preferences) {
+        mutableStateOf(preferences.getString("pocket_theme_accent", "blue") ?: "blue")
+    }
+
+    DisposableEffect(preferences) {
+        val listener =
+            SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
+                if (key == "pocket_theme_accent") {
+                    accentName = sharedPreferences.getString(key, "blue") ?: "blue"
+                }
+            }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    val accentIndex = AccentValues.indexOf(accentName).coerceAtLeast(0)
     val accent = pocketAccentColor(accentIndex)
 
     val colors =
