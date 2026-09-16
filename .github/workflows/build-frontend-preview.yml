@@ -27,7 +27,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Fetch exact pinned backend and only four native cores
+      - name: Fetch exact pinned backend and four native cores
         shell: bash
         run: |
           set -euo pipefail
@@ -43,7 +43,7 @@ jobs:
           git -C .work/upstream/lemuroid-cores sparse-checkout set bundled-cores lemuroid_core_mgba lemuroid_core_gambatte lemuroid_core_snes9x lemuroid_core_melonds
           git -C .work/upstream/lemuroid-cores fetch --depth 1 origin fee2e824525daa22bcf318f96127fe43fa8a15ad
           git -C .work/upstream/lemuroid-cores checkout --detach FETCH_HEAD
-      - name: Apply Pocket frontend and console-first design
+      - name: Apply Pocket-owned launcher and persistent multi-folder index
         shell: bash
         run: |
           set -euo pipefail
@@ -54,7 +54,9 @@ jobs:
           sed -i '/^import androidx.compose.material3.Button$/i import androidx.compose.material3.AlertDialog' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
           python3 scripts/apply_multisystem_frontend.py "$GITHUB_WORKSPACE/.work/upstream"
           python3 scripts/apply_frontend_visual.py "$GITHUB_WORKSPACE/.work/upstream"
-      - name: Assert four cores, platform filters and original UI
+          python3 scripts/apply_multi_folder_library.py "$GITHUB_WORKSPACE/.work/upstream"
+          python3 scripts/apply_original_launcher.py "$GITHUB_WORKSPACE/.work/upstream"
+      - name: Assert all consoles, unique launcher and safe multi-folder persistence
         shell: bash
         run: |
           set -euo pipefail
@@ -62,15 +64,19 @@ jobs:
             test -f ".work/upstream/lemuroid-cores/bundled-cores/src/main/jniLibs/arm64-v8a/lib${core}_libretro_android.so"
           done
           grep -Fq 'SystemID.SNES, SystemID.NDS' .work/upstream/retrograde-app-shared/src/main/java/com/swordfish/lemuroid/lib/library/GameSystem.kt
-          grep -Fq 'PocketPlatformShelf("Consoles", null, onConsole)' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
+          grep -Fq 'PocketPlatformShelf("Sistemas", null, onConsole)' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
+          ! grep -Fq 'PocketBottomBar(' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
+          grep -Fq 'pocket_library_roots_v1' .work/upstream/retrograde-app-shared/src/main/java/com/swordfish/lemuroid/lib/storage/local/StorageAccessFrameworkProvider.kt
+          grep -Fq 'if (scanCompleted) cleanUp(startedAtMs)' .work/upstream/retrograde-app-shared/src/main/java/com/swordfish/lemuroid/lib/library/LemuroidLibrary.kt
+          test -s .work/upstream/lemuroid-app/src/main/res/drawable/pocket_launcher_mark.xml
           ! grep -Fq 'coverPicker.launch(' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
-      - name: Compile preview APK
+      - name: Compile Pocket launcher APK
         working-directory: .work/upstream
         shell: bash
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon :lemuroid-app:assembleFreeBundleDebug
-      - name: Verify compiled APK native cores
+      - name: Verify APK really carries four native cores
         shell: bash
         run: |
           set -euo pipefail
@@ -79,11 +85,12 @@ jobs:
           for core in mgba gambatte snes9x melonds; do
             unzip -Z1 "$apk" | grep -Fq "lib/arm64-v8a/lib${core}_libretro_android.so"
           done
-          cp "$apk" Pocket-frontend-preview.apk
-          ls -lh Pocket-frontend-preview.apk
+          cp "$apk" Pocket-launcher-preview.apk
+          ls -lh Pocket-launcher-preview.apk
+          sha256sum Pocket-launcher-preview.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Pocket-frontend-preview-apk
-          path: Pocket-frontend-preview.apk
+          name: Pocket-launcher-preview-apk
+          path: Pocket-launcher-preview.apk
           if-no-files-found: error
           retention-days: 14
