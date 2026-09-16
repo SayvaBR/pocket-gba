@@ -2,24 +2,18 @@ package br.sayva.pocketlauncher;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.net.Uri;
 import android.os.Bundle;
-import android.provider.DocumentsContract;
 import android.view.View;
 import android.view.WindowInsets;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MainActivity extends Activity {
@@ -37,7 +31,8 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(Color.TRANSPARENT);getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
         getWindow().getDecorView().setSystemUiVisibility(0x100 | 0x200 | 0x400);
         library=new LibraryStore(this); covers=new CoverLoader(this);
         navigation=getSharedPreferences("pocket_navigation_v1",MODE_PRIVATE);
@@ -46,14 +41,19 @@ public final class MainActivity extends Activity {
         accent=navigation.getInt("accent",PocketUi.ACCENT);
         root=new FrameLayout(this);root.setBackground(PocketUi.dots(this));
         root.setOnApplyWindowInsetsListener((view,insets)-> {
-            android.graphics.Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
-            view.setPadding(safe.left,safe.top,safe.right,safe.bottom);
+            if(android.os.Build.VERSION.SDK_INT>=30){
+                android.graphics.Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+                view.setPadding(safe.left,safe.top,safe.right,safe.bottom);
+            }else{
+                view.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),
+                    insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());
+            }
             return insets;
         });
         column=PocketUi.vertical(this);
         root.addView(column,new FrameLayout.LayoutParams(-1,-1));
         setContentView(root);root.requestApplyInsets();render();
-        if(library.roots.size()>0 && library.games.isEmpty())scan();
+        if(!library.roots.isEmpty() && library.games.isEmpty())scan();
     }
     void navigate(String next) {
         if(next.equals(page))return;
@@ -70,7 +70,8 @@ public final class MainActivity extends Activity {
     }
     private void render() {
         column.removeAllViews();
-        LinearLayout header=PocketUi.horizontal(this);header.setPadding(PocketUi.dp(this,22),PocketUi.dp(this,17),PocketUi.dp(this,18),PocketUi.dp(this,14));
+        LinearLayout header=PocketUi.horizontal(this);
+        header.setPadding(PocketUi.dp(this,22),PocketUi.dp(this,17),PocketUi.dp(this,18),PocketUi.dp(this,14));
         LinearLayout brand=PocketUi.vertical(this);
         TextView brandName=PocketUi.text(this,"P O C K E T",24,PocketUi.TEXT,true);
         TextView hint=PocketUi.text(this,"SUA BIBLIOTECA DE JOGOS",10,accent,true);hint.setLetterSpacing(.14f);
@@ -95,6 +96,7 @@ public final class MainActivity extends Activity {
         container=new FrameLayout(this);column.addView(container,new LinearLayout.LayoutParams(-1,0,1f));
         new Screens(this).show(container,page);
     }
+    void refreshAfterLaunch() {render();}
     void chooseFolder() {
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
@@ -151,21 +153,7 @@ public final class MainActivity extends Activity {
             .setNeutralButton("Editar",(d,w)->showActions(game))
             .setNegativeButton("Fechar",null).show();
     }
-    void launch(LibraryStore.Game game) {
-        try {
-            Uri rom=Uri.parse(game.uri);
-            Intent view=new Intent(Intent.ACTION_VIEW);
-            view.setDataAndType(rom,"application/octet-stream");
-            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            view.setClipData(ClipData.newUri(getContentResolver(),game.fileName,rom));
-            startActivity(Intent.createChooser(view,"Abrir com emulador"));
-            library.played(game);render();
-        }catch(Exception e){
-            new AlertDialog.Builder(this).setTitle("Emulador não encontrado")
-                .setMessage("O Pocket é um launcher independente. Instale um emulador compatível e associe a ROM. O envio genérico de arquivos não é aceito por todos os emuladores; adaptadores específicos ainda serão implementados.")
-                .setPositiveButton("Entendi",null).show();
-        }
-    }
+    void launch(LibraryStore.Game game) {new EmulatorRouter(this,game).choose();}
     void removeRoot(LibraryStore.Root root) {
         new AlertDialog.Builder(this).setTitle("Desvincular pasta?")
             .setMessage("Isso interrompe novas leituras desta pasta, mas preserva os jogos já indexados, as ROMs e os saves.")
