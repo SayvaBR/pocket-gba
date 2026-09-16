@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
+      - uses: actions/checkout@v4
       - name: Download exact passing clean-room APK from run 35104101402
         uses: actions/download-artifact@v4
         with:
@@ -39,28 +40,7 @@ jobs:
           profile: pixel_6
           emulator-boot-timeout: 720
           disable-animations: true
-          script: >-
-            mkdir -p qa/captures &&
-            (adb shell cmd overlay enable --user 0 com.android.internal.systemui.navbar.threebutton || true) &&
-            adb install -r qa/apk/app-debug.apk &&
-            adb shell am start -W -n br.sayva.pocketlauncher/.MainActivity &&
-            sleep 8 &&
-            adb shell pidof br.sayva.pocketlauncher &&
-            adb shell uiautomator dump /sdcard/pocket.xml &&
-            adb shell cat /sdcard/pocket.xml > qa/captures/01-home.xml &&
-            grep -Fq 'P O C K E T' qa/captures/01-home.xml &&
-            grep -Fq 'Consoles' qa/captures/01-home.xml &&
-            grep -Fq 'Sua coleção' qa/captures/01-home.xml || grep -Fq 'Nenhum jogo importado' qa/captures/01-home.xml &&
-            ! grep -Eiq 'isn.t responding|Close app|not responding' qa/captures/01-home.xml &&
-            adb exec-out screencap -p > qa/captures/01-home.png &&
-            adb shell input tap 405 270 &&
-            sleep 3 &&
-            adb shell uiautomator dump /sdcard/pocket.xml &&
-            adb shell cat /sdcard/pocket.xml > qa/captures/02-navigation.xml &&
-            adb exec-out screencap -p > qa/captures/02-navigation.png &&
-            adb shell pidof br.sayva.pocketlauncher &&
-            test -s qa/captures/01-home.png &&
-            test -s qa/captures/02-navigation.png
+          script: bash scripts/android-smoke.sh
       - name: Preserve screenshots and app tree even on failure
         uses: actions/upload-artifact@v4
         if: always()
