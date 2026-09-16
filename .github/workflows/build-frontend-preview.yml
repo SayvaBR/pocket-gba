@@ -55,6 +55,8 @@ jobs:
           python3 scripts/apply_multisystem_frontend.py "$GITHUB_WORKSPACE/.work/upstream"
           python3 scripts/apply_frontend_visual.py "$GITHUB_WORKSPACE/.work/upstream"
           python3 scripts/apply_multi_folder_library.py "$GITHUB_WORKSPACE/.work/upstream"
+          # Replace the round icon token after the prefix match in the original script.
+          sed -i 's#@mipmap/lemuroid_launcher_round#@drawable/pocket_launcher_mark_round#' scripts/apply_original_launcher.py
           python3 scripts/apply_original_launcher.py "$GITHUB_WORKSPACE/.work/upstream"
       - name: Assert all consoles, unique launcher and safe multi-folder persistence
         shell: bash
