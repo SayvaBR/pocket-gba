@@ -23,20 +23,25 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Fetch pinned Lemuroid source
+      - name: Fetch pinned Lemuroid source and mGBA core only
         shell: bash
         run: |
           set -euxo pipefail
-          git clone https://github.com/Swordfish90/Lemuroid.git .work/upstream
-          cd .work/upstream
-          git checkout 53752bf29bc3f95c50f6c38f70cd4a53450a7098
-          git submodule update --init --recursive
-          git lfs install --local
-          git lfs pull
-          if [ -d lemuroid-cores/.git ] || [ -f lemuroid-cores/.git ]; then
-            git -C lemuroid-cores lfs install --local
-            git -C lemuroid-cores lfs pull
-          fi
+
+          mkdir -p .work/upstream
+          git -C .work/upstream init
+          git -C .work/upstream remote add origin https://github.com/Swordfish90/Lemuroid.git
+          git -C .work/upstream fetch --depth 1 origin 53752bf29bc3f95c50f6c38f70cd4a53450a7098
+          git -C .work/upstream checkout --detach FETCH_HEAD
+
+          rm -rf .work/upstream/lemuroid-cores
+          mkdir -p .work/upstream/lemuroid-cores
+          git -C .work/upstream/lemuroid-cores init
+          git -C .work/upstream/lemuroid-cores remote add origin https://github.com/Swordfish90/LemuroidCores.git
+          git -C .work/upstream/lemuroid-cores sparse-checkout init --cone
+          git -C .work/upstream/lemuroid-cores sparse-checkout set bundled-cores lemuroid_core_mgba
+          git -C .work/upstream/lemuroid-cores fetch --depth 1 origin fee2e824525daa22bcf318f96127fe43fa8a15ad
+          git -C .work/upstream/lemuroid-cores checkout --detach FETCH_HEAD
 
       - name: Apply Pocket GBA focus patch
         run: bash scripts/prepare_upstream.sh "$GITHUB_WORKSPACE/.work/upstream"
