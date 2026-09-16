@@ -2,7 +2,7 @@ name: Build Pocket GBA APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/library-personalization-navigation]
   workflow_dispatch:
 
 permissions:
@@ -47,13 +47,16 @@ jobs:
           git -C .work/upstream/lemuroid-cores fetch --depth 1 origin fee2e824525daa22bcf318f96127fe43fa8a15ad
           git -C .work/upstream/lemuroid-cores checkout --detach FETCH_HEAD
 
-      - name: Apply Pocket GBA focus, shell and game menu
+      - name: Apply Pocket GBA frontend, navigation and game customization
         shell: bash
         run: |
           set -euo pipefail
           bash scripts/prepare_upstream.sh "$GITHUB_WORKSPACE/.work/upstream"
           python3 scripts/apply_shell_v2.py "$GITHUB_WORKSPACE/.work/upstream"
           python3 scripts/apply_game_menu.py "$GITHUB_WORKSPACE/.work/upstream"
+          python3 scripts/apply_library_personalization.py "$GITHUB_WORKSPACE/.work/upstream"
+          # The dialog import belongs to the generated shell, not the retained Lemuroid backend.
+          sed -i '/^import androidx.compose.material3.Button$/i import androidx.compose.material3.AlertDialog' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
 
       - name: Build installable debug APK
         working-directory: .work/upstream
