@@ -17,6 +17,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rive runtime dependencies on Ubuntu
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y libegl1 libgles2 libx11-6 libgl1 libopengl0
       - name: Install official Rive CLI
         shell: bash
         run: |
