@@ -55,6 +55,8 @@ jobs:
           python3 scripts/apply_shell_v2.py "$GITHUB_WORKSPACE/.work/upstream"
           python3 scripts/apply_game_menu.py "$GITHUB_WORKSPACE/.work/upstream"
           python3 scripts/apply_library_personalization.py "$GITHUB_WORKSPACE/.work/upstream"
+          # The dialog import belongs to the generated shell, not the retained Lemuroid backend.
+          sed -i '/^import androidx.compose.material3.Button$/i import androidx.compose.material3.AlertDialog' .work/upstream/lemuroid-app/src/main/java/com/swordfish/lemuroid/app/mobile/feature/main/PocketShell.kt
 
       - name: Build installable debug APK
         working-directory: .work/upstream
