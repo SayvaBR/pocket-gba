@@ -7,47 +7,31 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   emulator-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Java
-        uses: actions/setup-java@v5
+      - name: Download exactly the feature APK artifact from passing build 29
+        uses: actions/download-artifact@v4
         with:
-          distribution: temurin
-          java-version: '17'
-      - name: Prepare pinned emulator backend and Pocket frontend
+          name: PocketGBA-debug-apk
+          repository: SayvaBR/pocket-gba
+          run-id: 35071074699
+          github-token: ${{ github.token }}
+          path: smoke/apk
+      - name: Verify APK is the expected installable file
         shell: bash
         run: |
-          set -euxo pipefail
-          mkdir -p .work/upstream
-          git -C .work/upstream init
-          git -C .work/upstream remote add origin https://github.com/Swordfish90/Lemuroid.git
-          git -C .work/upstream fetch --depth 1 origin 53752bf29bc3f95c50f6c38f70cd4a53450a7098
-          git -C .work/upstream checkout --detach FETCH_HEAD
-          rm -rf .work/upstream/lemuroid-cores
-          mkdir -p .work/upstream/lemuroid-cores
-          git -C .work/upstream/lemuroid-cores init
-          git -C .work/upstream/lemuroid-cores remote add origin https://github.com/Swordfish90/LemuroidCores.git
-          git -C .work/upstream/lemuroid-cores sparse-checkout init --cone
-          git -C .work/upstream/lemuroid-cores sparse-checkout set bundled-cores lemuroid_core_mgba
-          git -C .work/upstream/lemuroid-cores fetch --depth 1 origin fee2e824525daa22bcf318f96127fe43fa8a15ad
-          git -C .work/upstream/lemuroid-cores checkout --detach FETCH_HEAD
-          bash scripts/prepare_upstream.sh "$GITHUB_WORKSPACE/.work/upstream"
-          python3 scripts/apply_shell_v2.py "$GITHUB_WORKSPACE/.work/upstream"
-          python3 scripts/apply_game_menu.py "$GITHUB_WORKSPACE/.work/upstream"
-      - name: Build APK
-        working-directory: .work/upstream
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon :lemuroid-app:assembleFreeBundleDebug
+          test -s smoke/apk/PocketGBA-debug.apk
+          file smoke/apk/PocketGBA-debug.apk
+          sha256sum smoke/apk/PocketGBA-debug.apk
       - name: Enable KVM access
         run: |
           if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
-      - name: Boot Android 35, install, launch and capture screen
+      - name: Android 35 UI smoke — fresh boot, tabs, Android Back, resume
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -57,22 +41,38 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 720
           script: >-
-            mkdir -p smoke &&
-            APK="$(find .work/upstream/lemuroid-app/build/outputs/apk -name '*free*bundle*debug*.apk' | head -n 1)" &&
-            test -n "$APK" &&
-            adb install -r "$APK" &&
+            mkdir -p smoke/captures &&
             (adb shell cmd overlay enable --user 0 com.android.internal.systemui.navbar.threebutton || true) &&
+            adb install -r smoke/apk/PocketGBA-debug.apk &&
             adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity &&
-            sleep 15 &&
+            sleep 18 &&
             adb shell pidof com.sayvabr.pocketgba.debug &&
-            adb shell settings get secure navigation_mode &&
-            adb exec-out screencap -p > smoke/pocket-home.png &&
-            test -s smoke/pocket-home.png
-      - name: Upload real emulator screenshot
+            adb exec-out screencap -p > smoke/captures/01-home.png &&
+            adb shell input tap 400 2150 &&
+            sleep 2 &&
+            adb exec-out screencap -p > smoke/captures/02-library.png &&
+            adb shell input tap 950 2150 &&
+            sleep 2 &&
+            adb exec-out screencap -p > smoke/captures/03-settings.png &&
+            adb shell input keyevent 4 &&
+            sleep 2 &&
+            adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb exec-out screencap -p > smoke/captures/04-back-library.png &&
+            adb shell input keyevent 3 &&
+            adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity &&
+            sleep 3 &&
+            adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb exec-out screencap -p > smoke/captures/05-resume-library.png &&
+            test -s smoke/captures/01-home.png &&
+            test -s smoke/captures/02-library.png &&
+            test -s smoke/captures/03-settings.png &&
+            test -s smoke/captures/04-back-library.png &&
+            test -s smoke/captures/05-resume-library.png
+      - name: Upload actual Android screenshots for visual approval
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pocket-gba-android-emulator-smoke
-          path: smoke/
+          name: pocket-gba-library-v3-android-navigation
+          path: smoke/captures/
           if-no-files-found: warn
           retention-days: 14
