@@ -13,7 +13,7 @@ permissions:
 jobs:
   emulator-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Download exact passing preview APK from workflow run 35074124036
         uses: actions/download-artifact@v4
@@ -36,11 +36,11 @@ jobs:
       - name: Enable KVM if available
         run: |
           if test -e /dev/kvm; then sudo chmod 666 /dev/kvm; fi
-      - name: Android 35 install, launch and screenshot navigation with system buttons
+      - name: Android 35 actual UI assertions and screenshots, no false positives
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          target: default
           arch: x86_64
           profile: pixel_6
           disable-animations: true
@@ -50,34 +50,48 @@ jobs:
             (adb shell cmd overlay enable --user 0 com.android.internal.systemui.navbar.threebutton || true) &&
             adb install -r smoke/apk/Pocket-frontend-preview.apk &&
             adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity &&
-            sleep 18 &&
+            sleep 25 &&
             adb shell pidof com.sayvabr.pocketgba.debug &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/home.xml &&
+            grep -Fq 'Sua biblioteca começa aqui' smoke/captures/home.xml &&
+            ! grep -Eiq "isn.t responding|Close app|not responding" smoke/captures/home.xml &&
             adb exec-out screencap -p > smoke/captures/01-home.png &&
             adb shell input tap 410 2150 &&
-            sleep 3 &&
-            adb exec-out screencap -p > smoke/captures/02-library-all.png &&
-            adb shell input tap 225 310 &&
-            sleep 2 &&
-            adb exec-out screencap -p > smoke/captures/03-library-filter.png &&
+            sleep 4 &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/library.xml &&
+            grep -Fq 'Nenhum jogo ainda' smoke/captures/library.xml &&
+            ! grep -Eiq "isn.t responding|Close app|not responding" smoke/captures/library.xml &&
+            adb exec-out screencap -p > smoke/captures/02-library.png &&
             adb shell input tap 950 2150 &&
-            sleep 2 &&
-            adb exec-out screencap -p > smoke/captures/04-settings.png &&
+            sleep 3 &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/settings.xml &&
+            grep -Fq 'Aparência' smoke/captures/settings.xml &&
+            adb exec-out screencap -p > smoke/captures/03-settings.png &&
             adb shell input keyevent 4 &&
-            sleep 2 &&
+            sleep 3 &&
             adb shell pidof com.sayvabr.pocketgba.debug &&
-            adb exec-out screencap -p > smoke/captures/05-back-library.png &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/back.xml &&
+            grep -Fq 'Nenhum jogo ainda' smoke/captures/back.xml &&
+            adb exec-out screencap -p > smoke/captures/04-back-library.png &&
             adb shell input keyevent 3 &&
             adb shell am start -W -n com.sayvabr.pocketgba.debug/com.swordfish.lemuroid.app.mobile.feature.main.MainActivity &&
-            sleep 3 &&
+            sleep 5 &&
             adb shell pidof com.sayvabr.pocketgba.debug &&
-            adb exec-out screencap -p > smoke/captures/06-resume-library.png &&
+            adb shell uiautomator dump /sdcard/window.xml &&
+            adb shell cat /sdcard/window.xml > smoke/captures/resume.xml &&
+            grep -Fq 'Nenhum jogo ainda' smoke/captures/resume.xml &&
+            adb exec-out screencap -p > smoke/captures/05-resume-library.png &&
             test -s smoke/captures/01-home.png &&
-            test -s smoke/captures/06-resume-library.png
-      - name: Preserve actual Android screenshots
+            test -s smoke/captures/05-resume-library.png
+      - name: Preserve screenshots and UI evidence even on failure
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: pocket-multisystem-android-smoke
+          name: pocket-multisystem-android-smoke-asserted
           path: smoke/captures/
           if-no-files-found: warn
           retention-days: 14
