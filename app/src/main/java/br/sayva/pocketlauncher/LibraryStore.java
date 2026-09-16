@@ -21,7 +21,7 @@ public final class LibraryStore {
         Root(String uri, String label) { this.uri=uri; this.label=label; }
     }
     public static final class Game {
-        public String id, uri, fileName, title, system;
+        public String id, uri, fileName, title, system, coverUri;
         public boolean favorite, hidden;
         public long lastPlayed;
         Game(String id, String uri, String fileName, String title, String system) {
@@ -54,6 +54,7 @@ public final class LibraryStore {
                 JSONObject g=entries.getJSONObject(i);
                 Game e=new Game(g.getString("id"),g.getString("uri"),g.getString("file"),g.getString("title"),g.getString("system"));
                 e.favorite=g.optBoolean("favorite"); e.hidden=g.optBoolean("hidden"); e.lastPlayed=g.optLong("played");
+                e.coverUri=g.optString("cover",null);
                 games.add(e);
             }
         } catch(Exception e) { android.util.Log.e("PocketLibrary","Invalid saved library; keeping original preference untouched",e); }
@@ -64,7 +65,8 @@ public final class LibraryStore {
             for(Root r:roots) folders.put(new JSONObject().put("uri",r.uri).put("label",r.label));
             for(Game g:games) entries.put(new JSONObject().put("id",g.id).put("uri",g.uri)
                 .put("file",g.fileName).put("title",g.title).put("system",g.system)
-                .put("favorite",g.favorite).put("hidden",g.hidden).put("played",g.lastPlayed));
+                .put("favorite",g.favorite).put("hidden",g.hidden).put("played",g.lastPlayed)
+                .put("cover",g.coverUri==null?JSONObject.NULL:g.coverUri));
             data.put("roots",folders).put("games",entries);
             if(!prefs.edit().putString("library",data.toString()).commit())
                 throw new IllegalStateException("Android did not persist the library");
@@ -82,12 +84,19 @@ public final class LibraryStore {
     }
     public synchronized void removeFolder(Root root) { roots.removeIf(r -> r.uri.equals(root.uri)); save(); }
     public synchronized void edit(Game game,String title,Boolean favorite,Boolean hidden) {
-        if(title!=null && !title.trim().isEmpty()) game.title=title.trim();
-        if(favorite!=null) game.favorite=favorite;
-        if(hidden!=null) game.hidden=hidden;
-        save();
+        for(Game current:games)if(current.id.equals(game.id)) {
+            if(title!=null && !title.trim().isEmpty()) current.title=title.trim();
+            if(favorite!=null) current.favorite=favorite;
+            if(hidden!=null) current.hidden=hidden;
+            save();return;
+        }
     }
-    public synchronized void played(Game game) { game.lastPlayed=System.currentTimeMillis(); save(); }
+    public synchronized void setCover(Game game,String contentUri){
+        for(Game current:games)if(current.id.equals(game.id)) {current.coverUri=contentUri;save();return;}
+    }
+    public synchronized void played(Game game) {
+        for(Game current:games)if(current.id.equals(game.id)) {current.lastPlayed=System.currentTimeMillis();save();return;}
+    }
     public synchronized List<Game> snapshot() { return new ArrayList<>(games); }
     public static String systemFor(String name) {
         String n=name.toLowerCase(Locale.ROOT);
@@ -150,7 +159,6 @@ public final class LibraryStore {
                             games.add(new Game(identity,fileUri.toString(),name,cleanTitle(name),system));
                             report.added++;
                         } else previous.uri=fileUri.toString();
-                        // One durable commit per folder's results is performed below, never a destructive cleanup.
                     }
                 }
             }
