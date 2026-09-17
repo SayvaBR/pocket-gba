@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class MainActivity extends Activity {
     private static final int PICK_TREE=401;
     private static final int PICK_COVER=402;
+    private static final int SHOW_DETAILS=403;
     LibraryStore library;
     CoverLoader covers;
     int accent=PocketUi.ACCENT;
@@ -60,7 +61,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume(){
         super.onResume();
-        // The integrated player commits history in another LibraryStore instance.
+        // The integrated player and detail view commit history/favorites using another LibraryStore instance.
         if(root!=null&&!scanning.get()) {library=new LibraryStore(this);render();}
     }
     void navigate(String next){
@@ -126,6 +127,20 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if(request==SHOW_DETAILS){
+            if(result!=RESULT_OK||data==null)return;
+            String gameId=data.getStringExtra(GameDetailsActivity.GAME_ID);
+            String action=data.getStringExtra(GameDetailsActivity.RESULT_ACTION);
+            if(gameId==null||action==null)return;
+            library=new LibraryStore(this);
+            for(LibraryStore.Game entry:library.snapshot())if(entry.id.equals(gameId)){
+                if(GameDetailsActivity.ACTION_PLAY.equals(action))launch(entry);
+                else if(GameDetailsActivity.ACTION_EDIT.equals(action))showActions(entry);
+                return;
+            }
+            toast("Este jogo não está mais na biblioteca.");
+            return;
+        }
         if(request==PICK_COVER){
             String gameId=pendingCoverId;
             pendingCoverId=null;navigation.edit().remove("pending_cover_id").apply();
@@ -196,15 +211,9 @@ public final class MainActivity extends Activity {
             }).show();
     }
     void details(LibraryStore.Game game){
-        boolean internal=game.system.equals("GBA")||game.system.equals("GB")||game.system.equals("GBC");
-        String info="Sistema: "+game.system+"\nArquivo: "+game.fileName+"\n\n"
-            +(game.lastPlayed==0?"Ainda não iniciado":"Último acesso: "+android.text.format.DateFormat.format("dd/MM/yyyy HH:mm",game.lastPlayed))
-            +"\n\n"+(internal?"mGBA integrado: não exige outro aplicativo.":"Este console exige um emulador externo instalado.")
-            +"\n\nAs ROMs não são excluídas ao ocultar jogos.";
-        new AlertDialog.Builder(this).setTitle(game.title).setMessage(info)
-            .setPositiveButton("Jogar",(d,w)->launch(game))
-            .setNeutralButton("Editar",(d,w)->showActions(game))
-            .setNegativeButton("Fechar",null).show();
+        Intent detail=new Intent(this,GameDetailsActivity.class);
+        detail.putExtra(GameDetailsActivity.GAME_ID,game.id);
+        startActivityForResult(detail,SHOW_DETAILS);
     }
     void launch(LibraryStore.Game game){
         if(game.system.equals("GBA")||game.system.equals("GB")||game.system.equals("GBC")){
