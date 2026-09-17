@@ -2,7 +2,6 @@ package br.sayva.pocketlauncher;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -126,7 +125,7 @@ public final class GameDetailsActivity extends Activity {
         hero.addView(heroContent,new FrameLayout.LayoutParams(-1,-2,Gravity.CENTER));
         body.addView(hero,PocketUi.lp(this,-1,-2,0,0,0,18));
 
-        LinearLayout facts=horizontal();facts.setGravity(Gravity.CENTER);facts.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout facts=horizontal();facts.setGravity(Gravity.CENTER);
         chip(facts,game.system,0xff34374a);
         chip(facts,game.favorite?"♥ Favorito":"♡ Coleção",0xff34374a);
         body.addView(facts,PocketUi.lp(this,-1,-2,0,0,0,11));
@@ -135,7 +134,8 @@ public final class GameDetailsActivity extends Activity {
         body.addView(play,PocketUi.lp(this,-1,58,0,0,0,11));
         LinearLayout secondary=horizontal();
         secondary.addView(button(game.favorite?"♥  Remover favorito":"♡  Favoritar",false,()->{
-            store.edit(game,null,!game.favorite,null);game.favorite=!game.favorite;draw();
+            // LibraryStore.edit mutates the same in-memory Game object; do NOT invert a second time.
+            store.edit(game,null,!game.favorite,null);draw();
         }),new LinearLayout.LayoutParams(0,dp(49),1));
         secondary.addView(button("✎  Editar",false,()->action(ACTION_EDIT)),PocketUi.lp(this,-2,49,9,0,0,0));
         body.addView(secondary,PocketUi.lp(this,-1,-2,0,0,0,25));
